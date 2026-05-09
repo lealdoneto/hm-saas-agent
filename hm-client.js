@@ -261,10 +261,15 @@ export class HMClient extends EventEmitter {
   // ─── Parsers ───────────────────────────────────────────────────────────────
 
   _parseStatusResponse(text) {
-    // Formato: #ID=123,STATUS=ON\n#ID=124,STATUS=OFF\n...
     const devices = [];
-    const lines = text.split('\n');
-    for (const line of lines) {
+    // Formato HTTP: ID:123|STATUS:ON ID:124|STATUS:OFF
+    for (const token of text.split(/\s+/)) {
+      const m = token.match(/^ID:(\d+)\|STATUS:(.+)$/);
+      if (m) devices.push({ id: Number(m[1]), status: m[2] });
+    }
+    if (devices.length) return devices;
+    // Formato TCP: #ID=123,STATUS=ON
+    for (const line of text.split('\n')) {
       const m = line.trim().match(/^#?ID=(\d+),STATUS=(.+)$/);
       if (m) devices.push({ id: Number(m[1]), status: m[2] });
     }
@@ -272,15 +277,24 @@ export class HMClient extends EventEmitter {
   }
 
   _parseListResponse(text) {
-    // Formato: #ID=123,NAME=Sala,TYPE=LIGHT,...
     const devices = [];
-    const lines = text.split('\n');
-    for (const line of lines) {
+    // Formato HTTP: ID:123|NAME:Sala|TYPE:LIGHT
+    for (const token of text.split(/\s+/)) {
+      if (!token.startsWith('ID:')) continue;
+      const props = {};
+      for (const part of token.split('|')) {
+        const idx = part.indexOf(':');
+        if (idx > -1) props[part.slice(0,idx).toLowerCase()] = part.slice(idx+1);
+      }
+      if (props.id) { props.id = Number(props.id); devices.push(props); }
+    }
+    if (devices.length) return devices;
+    // Formato TCP: #ID=123,NAME=Sala,...
+    for (const line of text.split('\n')) {
       const m = line.trim().match(/^#?ID=(\d+),(.+)$/);
       if (m) {
         const props = { id: Number(m[1]) };
-        const parts = m[2].split(',');
-        for (const part of parts) {
+        for (const part of m[2].split(',')) {
           const [k, v] = part.split('=');
           if (k && v) props[k.toLowerCase()] = v;
         }
